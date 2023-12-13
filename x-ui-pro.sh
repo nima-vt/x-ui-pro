@@ -68,17 +68,9 @@ if [[ ${UNINSTALL} == *"y"* ]]; then
 	clear && msg_ok "Completely Uninstalled!" && exit 1
 fi
 ##############################Domain Validations######################
-while true; do
-	domain=$(echo "$domain" 2>&1 | tr -d '[:space:]' )
-	SubDomain=$(echo "$domain" 2>&1 | sed 's/^[^ ]* \|\..*//g')
-	MainDomain=$(echo "$domain" 2>&1 | sed 's/.*\.\([^.]*\..*\)$/\1/')
-	if [[ -n "$domain" ]] &&  [[ "${SubDomain}.${MainDomain}" == "${domain}" ]] ; then
-		if [[ -n $(host "$domain" 2>/dev/null | grep -v NXDOMAIN) ]]; then
-			break
-		fi
-	fi
-	echo -en "${Blue}Enter available subdomain${Font} (${Yellow}sub.domain.tld${Font}): " && read domain 
-done
+echo -en "${Blue}Enter available subdomain${Font} (${Yellow}sub.domain.tld${Font}): " && read domain
+domain=$(echo "$domain" | tr -d '[:space:]') # Remove any whitespace
+MainDomain=$(echo "$domain" | sed -s 's/.*\.\(.*\..*\)$/\1/') # Extract MainDomain
 ###############################Install Packages#############################
 if [[ ${INSTALL} == *"y"* ]]; then
 	$Pak -y update
@@ -88,14 +80,17 @@ fi
 #########################Install nginx Config###############################
 systemctl stop nginx 
 fuser -k 80/tcp 80/udp 443/tcp 443/udp 2>/dev/null
-if [[ ! -f "/etc/letsencrypt/live/${MainDomain}/privkey.pem" ]]; then
-	certbot certonly --standalone --non-interactive --force-renewal --agree-tos --register-unsafely-without-email --cert-name "$MainDomain" -d "$domain"
+
+# Check and generate SSL certificate only if necessary
+if [[ ! -f "/etc/letsencrypt/live/$MainDomain/fullchain.pem" ]] || [[ ! -f "/etc/letsencrypt/live/$MainDomain/privkey.pem" ]]; then
+    certbot certonly --standalone --non-interactive --force-renewal --agree-tos --register-unsafely-without-email --cert-name "$MainDomain" -d "$domain"
+    sleep 3
+
+    if [[ ! -f "/etc/letsencrypt/live/$MainDomain/privkey.pem" ]]; then
+        msg_err "$MainDomain SSL certificate could not be generated, Maybe the domain or IP domain is invalid!" && exit 1
+    fi
 else
-	msg_ok "$MainDomain SSL Certificate is exist!"
-fi
-sleep 3
-if [[ ! -f "/etc/letsencrypt/live/${MainDomain}/privkey.pem" ]]; then
-	msg_err "$MainDomain SSL certificate could not be generated, Maybe the domain or IP domain is invalid!" && exit 1
+    msg_ok "$MainDomain SSL Certificate exists!"
 fi
 
 cat > "/etc/nginx/sites-available/$MainDomain" << EOF
